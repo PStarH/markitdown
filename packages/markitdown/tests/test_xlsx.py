@@ -237,6 +237,7 @@ def test_declining_hook_is_exactly_native(fragment: Optional[str]) -> None:
 def test_default_converter_does_not_parse_images_or_change_native_output(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    _xlsx_converter._load_xlsx_dependencies()
     monkeypatch.setattr(
         _xlsx_images, "_XlsxImages", Mock(side_effect=AssertionError("extra parsing"))
     )
@@ -331,6 +332,7 @@ def test_hook_failure_closes_image_stream_and_remains_visible() -> None:
 def test_native_table_failure_is_not_silently_skipped(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    _xlsx_converter._load_xlsx_dependencies()
     error = TypeError("not the repairable error")
     monkeypatch.setattr(_xlsx_converter.pd, "read_excel", Mock(side_effect=error))
     render = Mock(return_value="<p>recognized</p>")

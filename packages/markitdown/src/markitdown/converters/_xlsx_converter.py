@@ -1,6 +1,7 @@
 import io
 import re
 import sys
+import threading
 import zipfile
 from contextlib import contextmanager
 from typing import BinaryIO, Any, Iterator, Optional
@@ -9,21 +10,48 @@ from .._base_converter import DocumentConverter, DocumentConverterResult
 from .._exceptions import MissingDependencyException, MISSING_DEPENDENCY_MESSAGE
 from .._stream_info import StreamInfo
 
-# Try loading optional (but in this case, required) dependencies
-# Save reporting of any exceptions for later
+# Optional (but in this case, required) dependencies are imported on the first
+# conversion. pandas and openpyxl dominate library import time, and consumers
+# that never open a spreadsheet should not pay for them.
 _xlsx_dependency_exc_info = None
-try:
-    import pandas as pd
-    import openpyxl  # noqa: F401
-except ImportError:
-    _xlsx_dependency_exc_info = sys.exc_info()
-
 _xls_dependency_exc_info = None
-try:
-    import pandas as pd  # noqa: F811
-    import xlrd  # noqa: F401
-except ImportError:
-    _xls_dependency_exc_info = sys.exc_info()
+_xlsx_dependencies_loaded = False
+_xls_dependencies_loaded = False
+_dependency_lock = threading.Lock()
+pd: Any = None
+
+
+def _load_xlsx_dependencies() -> None:
+    global _xlsx_dependencies_loaded, _xlsx_dependency_exc_info, pd
+
+    with _dependency_lock:
+        if _xlsx_dependencies_loaded or _xlsx_dependency_exc_info is not None:
+            return
+        _xlsx_dependencies_loaded = True
+        try:
+            import pandas
+            import openpyxl  # noqa: F401
+        except ImportError:
+            _xlsx_dependency_exc_info = sys.exc_info()
+            return
+        pd = pandas
+
+
+def _load_xls_dependencies() -> None:
+    global _xls_dependencies_loaded, _xls_dependency_exc_info, pd
+
+    with _dependency_lock:
+        if _xls_dependencies_loaded or _xls_dependency_exc_info is not None:
+            return
+        _xls_dependencies_loaded = True
+        try:
+            import pandas
+            import xlrd  # noqa: F401
+        except ImportError:
+            _xls_dependency_exc_info = sys.exc_info()
+            return
+        pd = pandas
+
 
 ACCEPTED_XLSX_MIME_TYPE_PREFIXES = [
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -126,6 +154,9 @@ class XlsxConverter(DocumentConverter):
         stream_info: StreamInfo,
         **kwargs: Any,  # Options to pass to the converter
     ) -> DocumentConverterResult:
+        # Load the dependencies on first use
+        _load_xlsx_dependencies()
+
         # Check the dependencies
         if _xlsx_dependency_exc_info is not None:
             raise MissingDependencyException(
@@ -223,7 +254,10 @@ class XlsConverter(DocumentConverter):
         stream_info: StreamInfo,
         **kwargs: Any,  # Options to pass to the converter
     ) -> DocumentConverterResult:
-        # Load the dependencies
+        # Load the dependencies on first use
+        _load_xls_dependencies()
+
+        # Check the dependencies
         if _xls_dependency_exc_info is not None:
             raise MissingDependencyException(
                 MISSING_DEPENDENCY_MESSAGE.format(
