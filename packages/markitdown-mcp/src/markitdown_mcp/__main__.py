@@ -17,8 +17,10 @@ mcp = MCPServer("markitdown")
 
 
 @mcp.tool()
-async def convert_to_markdown(uri: str) -> str:
+def convert_to_markdown(uri: str) -> str:
     """Convert a resource described by an http:, https:, file: or data: URI to markdown"""
+    # Deliberately sync: the MCP SDK runs sync tools on a worker thread, so a
+    # slow conversion does not block the event loop for every other request.
     converter = MarkItDown(enable_plugins=check_plugins_enabled())
     try:
         return converter.convert_uri(uri).markdown
